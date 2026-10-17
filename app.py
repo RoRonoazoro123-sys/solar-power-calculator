@@ -1,23 +1,219 @@
-import streamlit as st
-import pandas as pd
+
+import calendar
+from datetime import date, timedelta
+from io import BytesIO
+
 import matplotlib.pyplot as plt
+import pandas as pd
+import requests
+import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
 from solar_calculations import estimate_solar
 
-st.set_page_config(page_title="Solar Power Calculator", page_icon="☀️", layout="wide")
+
+st.set_page_config(
+    page_title="Solar Power Calculator",
+    page_icon="☀️",
+    layout="wide",
+)
+
 st.title("☀️ Solar Power Calculator")
-st.write("Estimate solar electricity generation, system cost, savings, and simple payback.")
+st.write(
+    "Estimate solar generation, installation cost, electricity-bill "
+    "savings, and simple payback."
+)
+
+# Approximate coordinates for supported locations.
+LOCATIONS = {
+    "Jaipur, Rajasthan": (26.9124, 75.7873),
+    "Delhi, India": (28.6139, 77.2090),
+    "Mumbai, Maharashtra": (19.0760, 72.8777),
+    "Ahmedabad, Gujarat": (23.0225, 72.5714),
+    "Jodhpur, Rajasthan": (26.2389, 73.0243),
+    "Bengaluru, Karnataka": (12.9716, 77.5946),
+    "Hyderabad, Telangana": (17.3850, 78.4867),
+    "Chennai, Tamil Nadu": (13.0827, 80.2707),
+    "Kolkata, West Bengal": (22.5726, 88.3639),
+    "Lucknow, Uttar Pradesh": (26.8467, 80.9462),
+}
 
 with st.sidebar:
-    st.header("Solar system inputs")
-    capacity_kw = st.number_input("System capacity (kW)", min_value=0.5, max_value=1000.0, value=3.0, step=0.5)
-    panel_w = st.number_input("Panel rating (W)", min_value=100, max_value=800, value=500, step=25)
-    sun_hours = st.number_input("Average peak sun hours/day", min_value=0.5, max_value=10.0, value=5.0, step=0.25)
-    performance_ratio = st.slider("Performance ratio", min_value=0.50, max_value=0.95, value=0.80, step=0.01)
-    daily_load = st.number_input("Daily electricity use (kWh)", min_value=0.0, value=10.0, step=1.0)
-    cost_per_kw = st.number_input("Installed cost (₹ per kW)", min_value=0, value=60000, step=5000)
-    tariff = st.number_input("Electricity tariff (₹/kWh)", min_value=0.0, value=8.0, step=0.5)
-    solar_offset = st.slider("Share of solar generation that offsets your bill (%)", 0, 100, 80)
-    annual_maintenance = st.number_input("Annual maintenance estimate (₹)", min_value=0, value=1500, step=500)
+    st.header("Location and solar system")
+
+    location = st.selectbox(
+        "Select your location",
+        list(LOCATIONS.keys()),
+    )
+
+    st.caption(
+        "Location is used to request historical solar-radiation data. "
+        "If the data service is unavailable, enter your own sun-hours estimate."
+    )
+
+    capacity_kw = st.number_input(
+        "System capacity (kW)",
+        min_value=0.5,
+        max_value=1000.0,
+        value=3.0,
+        step=0.5,
+    )
+
+    panel_w = st.number_input(
+        "Panel rating (W)",
+        min_value=100,
+        max_value=800,
+        value=500,
+        step=25,
+    )
+
+    fallback_sun_hours = st.number_input(
+        "Fallback peak sun hours/day",
+        min_value=0.5,
+        max_value=10.0,
+        value=5.0,
+        step=0.25,
+        help="Used only if historical radiation data cannot be retrieved.",
+    )
+
+    performance_ratio = st.slider(
+        "System performance ratio",
+        min_value=0.50,
+        max_value=0.95,
+        value=0.80,
+        step=0.01,
+    )
+
+    daily_load = st.number_input(
+        "Daily electricity use (kWh)",
+        min_value=0.0,
+        value=10.0,
+        step=1.0,
+    )
+
+    monthly_bill = st.number_input(
+        "Current monthly electricity bill (₹)",
+        min_value=0.0,
+        value=2400.0,
+        step=100.0,
+    )
+
+    cost_per_kw = st.number_input(
+        "Installed cost (₹ per kW)",
+        min_value=0,
+        value=60000,
+        step=5000,
+    )
+
+    tariff = st.number_input(
+        "Electricity tariff (₹/kWh)",
+        min_value=0.0,
+        value=8.0,
+        step=0.5,
+    )
+
+    solar_offset = st.slider(
+        "Share of generation that offsets your bill (%)",
+        min_value=0,
+        max_value=100,
+        value=80,
+    )
+
+    annual_maintenance = st.number_input(
+        "Annual maintenance estimate (₹)",
+        min_value=0,
+        value=1500,
+        step=500,
+    )
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_solar_radiation(latitude, longitude):
+    """Fetch approximately one year of historical daily solar radiation."""
+
+    end_date = date.today() - timedelta(days=6)
+    start_date = end_date - timedelta(days=364)
+
+    url = "https://archive-api.open-meteo.com/v1/archive"
+
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "daily": "shortwave_radiation_sum",
+        "timezone": "auto",
+    }
+
+    response = requests.get(url, params=params, timeout=20)
+    response.raise_for_status()
+    payload = response.json()
+
+    daily_data = payload.get("daily", {})
+    dates = daily_data.get("time", [])
+    radiation = daily_data.get("shortwave_radiation_sum", [])
+
+    if not dates or not radiation or len(dates) != len(radiation):
+        raise ValueError("No usable solar-radiation data was returned.")
+
+    frame = pd.DataFrame({
+        "date": pd.to_datetime(dates),
+        "radiation_mj_m2": radiation,
+    })
+
+    frame["radiation_mj_m2"] = pd.to_numeric(
+        frame["radiation_mj_m2"], errors="coerce"
+    )
+    frame = frame.dropna()
+
+    if frame.empty:
+        raise ValueError("Historical radiation data was empty.")
+
+    # 1 kWh/m² = 3.6 MJ/m².
+    # Daily irradiation in kWh/m² is used as equivalent peak sun hours.
+    frame["peak_sun_hours"] = frame["radiation_mj_m2"] / 3.6
+    frame["month"] = frame["date"].dt.month
+
+    monthly_sun = frame.groupby("month")["peak_sun_hours"].mean()
+    average_sun = float(frame["peak_sun_hours"].mean())
+
+    return monthly_sun.to_dict(), average_sun, start_date.isoformat(), end_date.isoformat()
+
+
+latitude, longitude = LOCATIONS[location]
+
+try:
+    with st.spinner("Loading historical solar-radiation data..."):
+        monthly_sun, sun_hours, data_start, data_end = fetch_solar_radiation(
+            latitude, longitude
+        )
+
+    data_source = (
+        "Open-Meteo Historical Weather API — daily shortwave solar radiation"
+    )
+    st.success(f"Historical solar-radiation data loaded for {location}.")
+
+except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+    monthly_sun = {}
+    sun_hours = float(fallback_sun_hours)
+    data_start = None
+    data_end = None
+    data_source = "Manual fallback peak-sun-hours estimate"
+
+    st.warning(
+        "Historical data could not be loaded. The calculator is using your "
+        "manual fallback sun-hours value instead. Check your internet "
+        "connection and try again later."
+    )
 
 result = estimate_solar(
     capacity_kw=capacity_kw,
@@ -31,62 +227,245 @@ result = estimate_solar(
     daily_load=daily_load,
 )
 
+# Use historical monthly radiation when available; otherwise use a constant
+# daily estimate. Missing months use the annual average sun-hours estimate.
+months = list(calendar.month_abbr)[1:]
+monthly_values = []
+
+for month_number in range(1, 13):
+    month_sun = float(monthly_sun.get(month_number, sun_hours))
+    days = calendar.monthrange(date.today().year, month_number)[1]
+    generation = capacity_kw * month_sun * performance_ratio * days
+    monthly_values.append(generation)
+
+monthly = pd.DataFrame({
+    "Month": months,
+    "Estimated generation (kWh)": monthly_values,
+})
+
+monthly_generation = float(monthly["Estimated generation (kWh)"].sum())
+annual_generation = monthly_generation
+average_daily_generation = annual_generation / 365
+
+# Recalculate annual bill savings using the seasonal generation estimate.
+annual_offset_kwh = annual_generation * solar_offset / 100
+annual_savings = annual_offset_kwh * tariff
+net_annual_benefit = annual_savings - annual_maintenance
+payback_years = (
+    result["gross_cost"] / net_annual_benefit
+    if net_annual_benefit > 0
+    else None
+)
+
+# Approximate generation for the next 30 days using the current month.
+current_month_sun = float(monthly_sun.get(date.today().month, sun_hours))
+current_month_daily_kwh = (
+    capacity_kw * current_month_sun * performance_ratio
+)
+estimated_monthly_bill_savings = (
+    current_month_daily_kwh * 30 * solar_offset / 100 * tariff
+)
+
 st.subheader("Estimated results")
+
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Daily generation", f"{result['daily_kwh']:,.1f} kWh")
-c2.metric("Monthly generation", f"{result['monthly_kwh']:,.0f} kWh")
-c3.metric("Annual generation", f"{result['annual_kwh']:,.0f} kWh")
+c1.metric("Average daily generation", f"{average_daily_generation:,.1f} kWh")
+c2.metric("Average monthly generation", f"{annual_generation / 12:,.0f} kWh")
+c3.metric("Annual generation", f"{annual_generation:,.0f} kWh")
 c4.metric("Estimated panel count", f"{result['panels']}")
 
 c5, c6, c7 = st.columns(3)
 c5.metric("Estimated system cost", f"₹{result['gross_cost']:,.0f}")
-c6.metric("Annual bill savings (estimate)", f"₹{result['annual_savings']:,.0f}")
-if result["payback_years"] is None:
-    payback_text = "Not calculated"
-else:
-    payback_text = f"{result['payback_years']:.1f} years"
-c7.metric("Simple payback", payback_text)
+c6.metric("Annual bill savings", f"₹{annual_savings:,.0f}")
+c7.metric(
+    "Simple payback",
+    f"{payback_years:.1f} years" if payback_years is not None else "Not calculated",
+)
 
-st.caption("Estimates only. Actual output depends on location, weather, roof direction/tilt, shading, equipment, tariff rules, and how much energy you use or export.")
+st.caption(
+    f"Location: {location} | Coordinates: {latitude:.4f}, {longitude:.4f}"
+)
+st.caption(f"Data source: {data_source}")
 
-st.subheader("Monthly energy estimate")
-months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-# Simple demonstration model: equal monthly generation. Replace with location-specific monthly solar data for better accuracy.
-monthly_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-monthly = pd.DataFrame({
-    "Month": months,
-    "Estimated generation (kWh)": [result["daily_kwh"] * d for d in monthly_days]
-})
-fig, ax = plt.subplots()
+if data_start and data_end:
+    st.caption(
+        f"Historical data period: {data_start} to {data_end}. "
+        "Historical weather is not a forecast of future generation."
+    )
+
+st.info(
+    f"Approximate next-30-day bill savings: ₹{estimated_monthly_bill_savings:,.0f}. "
+    "Actual savings depend on your billing rules, self-consumption, exports, "
+    "and fixed charges."
+)
+
+st.subheader("Monthly solar generation")
+
+fig, ax = plt.subplots(figsize=(10, 4))
 ax.bar(monthly["Month"], monthly["Estimated generation (kWh)"])
 ax.set_ylabel("Energy (kWh)")
 ax.set_xlabel("Month")
-ax.set_title("Estimated monthly solar generation (constant average conditions)")
+ax.set_title(f"Estimated monthly generation — {location}")
 ax.grid(axis="y", alpha=0.25)
+fig.tight_layout()
 st.pyplot(fig)
 plt.close(fig)
 
-st.subheader("System sizing check")
-if daily_load > 0:
-    required_kw = daily_load / (sun_hours * performance_ratio)
-    st.write(f"Approximate PV capacity to generate your daily usage: **{required_kw:.2f} kW**.")
-    st.write(f"Your selected system capacity is **{capacity_kw:.2f} kW**.")
+st.subheader("Daily, monthly and yearly view")
+
+period = st.selectbox(
+    "Choose chart view",
+    ["Daily average", "Monthly", "Yearly"],
+)
+
+if period == "Daily average":
+    chart = pd.DataFrame({
+        "Period": ["Average day"],
+        "Generation (kWh)": [average_daily_generation],
+    })
+elif period == "Monthly":
+    chart = monthly.rename(
+        columns={"Estimated generation (kWh)": "Generation (kWh)"}
+    )[["Month", "Generation (kWh)"]].rename(columns={"Month": "Period"})
 else:
-    st.write("Enter a daily electricity use above zero to estimate the capacity required.")
+    chart = pd.DataFrame({
+        "Period": ["Estimated year"],
+        "Generation (kWh)": [annual_generation],
+    })
+
+st.bar_chart(chart, x="Period", y="Generation (kWh)")
+
+st.subheader("System sizing check")
+
+if daily_load > 0 and sun_hours > 0 and performance_ratio > 0:
+    required_kw = daily_load / (sun_hours * performance_ratio)
+    st.write(
+        f"Approximate PV capacity to generate your daily usage: "
+        f"**{required_kw:.2f} kW**."
+    )
+    st.write(f"Selected system capacity: **{capacity_kw:.2f} kW**.")
+else:
+    st.write("Enter a daily electricity use above zero to estimate capacity.")
 
 st.subheader("Results table")
+
 summary = pd.DataFrame([
-    {"Metric": "Daily generation", "Estimate": f"{result['daily_kwh']:.2f} kWh"},
-    {"Metric": "Annual generation", "Estimate": f"{result['annual_kwh']:.2f} kWh"},
+    {"Metric": "Location", "Estimate": location},
+    {"Metric": "Average daily generation", "Estimate": f"{average_daily_generation:.2f} kWh"},
+    {"Metric": "Estimated annual generation", "Estimate": f"{annual_generation:.2f} kWh"},
     {"Metric": "Panel count", "Estimate": str(result["panels"])},
     {"Metric": "Gross installed cost", "Estimate": f"₹{result['gross_cost']:,.0f}"},
-    {"Metric": "Annual bill savings", "Estimate": f"₹{result['annual_savings']:,.0f}"},
-    {"Metric": "Simple payback", "Estimate": payback_text},
+    {"Metric": "Current monthly bill", "Estimate": f"₹{monthly_bill:,.0f}"},
+    {"Metric": "Estimated annual bill savings", "Estimate": f"₹{annual_savings:,.0f}"},
+    {"Metric": "Annual maintenance", "Estimate": f"₹{annual_maintenance:,.0f}"},
+    {"Metric": "Simple payback", "Estimate": f"{payback_years:.1f} years" if payback_years is not None else "Not calculated"},
+    {"Metric": "Data source", "Estimate": data_source},
 ])
-st.dataframe(summary, use_container_width=True, hide_index=True)
+
+st.dataframe(summary, width="stretch", hide_index=True)
+
 st.download_button(
     "Download results as CSV",
-    data=summary.to_csv(index=False).encode("utf-8"),
+    data=summary.to_csv(index=False).encode("utf-8-sig"),
     file_name="solar_calculator_results.csv",
     mime="text/csv",
+)
+
+
+def create_pdf_report(summary_df, monthly_df, source, selected_location):
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40,
+    )
+
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Solar Power Calculator Report", styles["Title"]),
+        Spacer(1, 12),
+        Paragraph(f"Location: {selected_location}", styles["Normal"]),
+        Paragraph(f"Report date: {date.today().isoformat()}", styles["Normal"]),
+        Paragraph(f"Data source: {source}", styles["Normal"]),
+        Spacer(1, 16),
+        Paragraph("System and financial estimates", styles["Heading2"]),
+    ]
+
+    table_data = [["Metric", "Estimate"]]
+    table_data.extend(summary_df.values.tolist())
+
+    table = Table(table_data, colWidths=[220, 260], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#176B45")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 18))
+    story.append(Paragraph("Monthly generation estimate", styles["Heading2"]))
+
+    monthly_data = [["Month", "Estimated generation (kWh)"]]
+    for _, row in monthly_df.iterrows():
+        monthly_data.append([
+            str(row["Month"]),
+            f"{row['Estimated generation (kWh)']:,.1f}",
+        ])
+
+    monthly_table = Table(monthly_data, colWidths=[150, 220], repeatRows=1)
+    monthly_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#176B45")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("PADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(monthly_table)
+    story.append(Spacer(1, 18))
+    story.append(Paragraph(
+        "Important assumptions: This report provides planning estimates, not "
+        "a professional site survey or guaranteed production. Results depend "
+        "on weather, shading, roof orientation, system losses, equipment, "
+        "electricity tariffs, self-consumption, and applicable export rules. "
+        "Historical solar radiation does not guarantee future output.",
+        styles["BodyText"],
+    ))
+
+    document.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+try:
+    pdf_bytes = create_pdf_report(summary, monthly, data_source, location)
+    st.download_button(
+        "Download solar report as PDF",
+        data=pdf_bytes,
+        file_name="solar_power_report.pdf",
+        mime="application/pdf",
+    )
+except Exception as exc:
+    st.error("PDF report could not be created. Check the app logs for details.")
+
+st.subheader("Data sources and assumptions")
+st.markdown(
+    """
+- **Historical solar radiation:** Open-Meteo Historical Weather API,
+  when available. Its radiation data is converted from MJ/m² to kWh/m².
+- **Fallback:** If the API is unavailable, the app uses the manually entered
+  peak-sun-hours value and a constant daily estimate.
+- **Performance ratio:** A user-selected allowance for system losses.
+- **Savings:** Estimated offset energy multiplied by the entered tariff.
+- **Payback:** Installed cost divided by annual savings after maintenance.
+- **Not included:** Detailed rooftop shading, inverter modelling, panel
+  degradation, financing, subsidies, taxes, fixed bill charges, or utility
+  export-credit calculations.
+"""
+)
+st.caption(
+    "Historical data source: https://open-meteo.com/ | "
+    "API documentation: https://open-meteo.com/en/docs/historical-weather-api"
 )
