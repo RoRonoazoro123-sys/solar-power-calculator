@@ -34,14 +34,56 @@ st.markdown(
     <style>
     .stApp { background: linear-gradient(180deg, #f4fbf6 0%, #f7f9fc 45%, #ffffff 100%); }
     [data-testid="stSidebar"] { background: linear-gradient(180deg, #103d2b 0%, #176b45 100%); }
-    [data-testid="stSidebar"] * { color: #ffffff; }
+   /* Fix sidebar text visibility */
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] small,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+    color: #ffffff !important;
+}
+
+/* Keep input fields readable */
+[data-testid="stSidebar"] input {
+    color: #ffffff !important;
+}
+
+/* Help text and slider labels */
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] *,
+[data-testid="stSidebar"] [data-testid="stSlider"] * {
+    color: #ffffff !important;
+}
     [data-testid="stMetric"] {
         background: #ffffff; border: 1px solid #e0eee5; padding: 16px 18px;
         border-radius: 14px; box-shadow: 0 4px 14px rgba(18, 67, 43, 0.06);
     }
     [data-testid="stMetricLabel"] { color: #52665b; font-weight: 600; }
     [data-testid="stMetricValue"] { color: #176b45; font-weight: 750; }
-    h1, h2, h3 { color: #173d2b; }
+    h1, h2, h3 {
+    color: #173d2b !important;
+}
+
+p, label, [data-testid="stMarkdownContainer"] {
+    color: #263b30 !important;
+}
+
+[data-testid="stMetric"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    padding: 12px;
+    background: #ffffff;
+    border: 1px solid #d5e7db;
+    border-radius: 14px;
+}
+
+[data-testid="stMetricLabel"] {
+    color: #40594a !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: #176b45 !important;
+    font-size: clamp(1rem, 2vw, 1.8rem) !important;
+}
     .dashboard-subtitle { color: #607368; font-size: 1.05rem; margin-top: -0.6rem; margin-bottom: 1.2rem; }
     </style>
     """,
