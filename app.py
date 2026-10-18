@@ -27,10 +27,32 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("☀️ Solar Power Calculator")
-st.write(
-    "Estimate solar generation, installation cost, electricity-bill "
-    "savings, and simple payback."
+
+# Professional dashboard styling
+st.markdown(
+    """
+    <style>
+    .stApp { background: linear-gradient(180deg, #f4fbf6 0%, #f7f9fc 45%, #ffffff 100%); }
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, #103d2b 0%, #176b45 100%); }
+    [data-testid="stSidebar"] * { color: #ffffff; }
+    [data-testid="stMetric"] {
+        background: #ffffff; border: 1px solid #e0eee5; padding: 16px 18px;
+        border-radius: 14px; box-shadow: 0 4px 14px rgba(18, 67, 43, 0.06);
+    }
+    [data-testid="stMetricLabel"] { color: #52665b; font-weight: 600; }
+    [data-testid="stMetricValue"] { color: #176b45; font-weight: 750; }
+    h1, h2, h3 { color: #173d2b; }
+    .dashboard-subtitle { color: #607368; font-size: 1.05rem; margin-top: -0.6rem; margin-bottom: 1.2rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("☀️ Solar Energy — Professional Dashboard")
+st.markdown(
+    '<div class="dashboard-subtitle">Solar production, financial insights, '
+    'system sizing and environmental impact in one place.</div>',
+    unsafe_allow_html=True,
 )
 
 # Approximate coordinates for supported locations.
@@ -266,7 +288,7 @@ estimated_monthly_bill_savings = (
     current_month_daily_kwh * 30 * solar_offset / 100 * tariff
 )
 
-st.subheader("Estimated results")
+st.subheader("At-a-glance performance")
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Average daily generation", f"{average_daily_generation:,.1f} kWh")
@@ -293,7 +315,8 @@ if data_start and data_end:
         "Historical weather is not a forecast of future generation."
     )
 
-st.subheader("Subsidy & Final Installation Cost")
+st.divider()
+st.subheader("Financial overview: subsidy and installation cost")
 
 subsidy_amount = st.number_input(
     "Enter subsidy amount (₹)",
@@ -328,7 +351,8 @@ st.caption(
     "eligibility or approval. Actual savings and payback may vary."
 )
 
-st.subheader("Environmental Impact")
+st.divider()
+st.subheader("Environmental impact")
 
 # Editable estimate of grid emissions in India
 grid_emission_factor = st.number_input(
@@ -391,30 +415,57 @@ fig.tight_layout()
 st.pyplot(fig)
 plt.close(fig)
 
-st.subheader("Daily, monthly and yearly view")
-
-period = st.selectbox(
-    "Choose chart view",
-    ["Daily average", "Monthly", "Yearly"],
+st.subheader("Generation analytics")
+chart_tab_daily, chart_tab_monthly, chart_tab_yearly = st.tabs(
+    ["Daily estimate", "Monthly trend", "Annual overview"]
 )
 
-if period == "Daily average":
-    chart = pd.DataFrame({
-        "Period": ["Average day"],
-        "Generation (kWh)": [average_daily_generation],
-    })
-elif period == "Monthly":
-    chart = monthly.rename(
-        columns={"Estimated generation (kWh)": "Generation (kWh)"}
-    )[["Month", "Generation (kWh)"]].rename(columns={"Month": "Period"})
-else:
-    chart = pd.DataFrame({
-        "Period": ["Estimated year"],
-        "Generation (kWh)": [annual_generation],
-    })
+# Daily estimates are modelled from each month's average historical radiation.
+# They are estimates, not measured day-by-day future production.
+daily_rows = []
+current_year = date.today().year
+for month_number in range(1, 13):
+    month_sun = float(monthly_sun.get(month_number, sun_hours))
+    number_of_days = calendar.monthrange(current_year, month_number)[1]
+    daily_kwh = capacity_kw * month_sun * performance_ratio
+    for day_number in range(1, number_of_days + 1):
+        daily_rows.append({
+            "Date": date(current_year, month_number, day_number),
+            "Estimated generation (kWh)": daily_kwh,
+        })
+daily_estimates = pd.DataFrame(daily_rows)
 
-st.bar_chart(chart, x="Period", y="Generation (kWh)")
+with chart_tab_daily:
+    st.caption(
+        "Modelled daily estimates use each month's average solar radiation; "
+        "they are not actual measurements or a weather forecast."
+    )
+    st.line_chart(daily_estimates.set_index("Date"), y="Estimated generation (kWh)")
 
+with chart_tab_monthly:
+    st.bar_chart(monthly.set_index("Month"), y="Estimated generation (kWh)")
+    st.caption(
+        f"Estimated annual production from the monthly model: "
+        f"{annual_generation:,.0f} kWh."
+    )
+
+with chart_tab_yearly:
+    annual_overview = pd.DataFrame({
+        "Metric": ["Daily average", "Monthly average", "Annual total"],
+        "Generation (kWh)": [
+            average_daily_generation,
+            annual_generation / 12,
+            annual_generation,
+        ],
+    })
+    st.bar_chart(annual_overview, x="Metric", y="Generation (kWh)")
+    st.dataframe(annual_overview, hide_index=True, width="stretch")
+    st.caption(
+        "The yearly view summarizes this modelled year. The app does not "
+        "have multiple years of actual solar-production measurements."
+    )
+
+st.divider()
 st.subheader("System sizing check")
 
 if daily_load > 0 and sun_hours > 0 and performance_ratio > 0:
