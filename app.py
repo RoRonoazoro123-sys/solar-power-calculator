@@ -293,6 +293,86 @@ if data_start and data_end:
         "Historical weather is not a forecast of future generation."
     )
 
+st.subheader("Subsidy & Final Installation Cost")
+
+subsidy_amount = st.number_input(
+    "Enter subsidy amount (₹)",
+    min_value=0.0,
+    max_value=float(result["gross_cost"]),
+    value=0.0,
+    step=5000.0,
+    help="Enter the subsidy amount you expect. Approval and eligibility are not guaranteed."
+)
+
+gross_cost = float(result["gross_cost"])
+final_cost = max(0.0, gross_cost - subsidy_amount)
+
+st.metric("Installation cost before subsidy", f"₹{gross_cost:,.0f}")
+st.metric("Subsidy entered", f"₹{subsidy_amount:,.0f}")
+st.metric("Final installation cost", f"₹{final_cost:,.0f}")
+
+subsidized_payback = None
+
+if net_annual_benefit > 0:
+    subsidized_payback = final_cost / net_annual_benefit
+    st.metric(
+        "Estimated payback after subsidy",
+        f"{subsidized_payback:.1f} years"
+    )
+else:
+    st.metric("Estimated payback after subsidy", "Not calculated")
+
+
+st.caption(
+    "Subsidy is user-entered and is not a confirmation of government "
+    "eligibility or approval. Actual savings and payback may vary."
+)
+
+st.subheader("Environmental Impact")
+
+# Editable estimate of grid emissions in India
+grid_emission_factor = st.number_input(
+    "Grid emission factor (kg CO2/kWh)",
+    min_value=0.0,
+    max_value=2.0,
+    value=0.710,
+    step=0.010,
+    format="%.3f",
+    help="Default: India's 2024-25 weighted-average grid factor. "
+         "Change this value if you have a more suitable factor."
+)
+
+# Use the existing annual solar generation estimate
+annual_generation_kwh = float(annual_generation)
+co2_avoided_kg = annual_generation_kwh * grid_emission_factor
+co2_avoided_tonnes = co2_avoided_kg / 1000
+
+# Simple 25-year estimate, assuming constant generation and emissions factor
+lifetime_co2_tonnes = co2_avoided_tonnes * 25
+
+col1, col2 = st.columns(2)
+
+col1.metric(
+    "Annual solar generation",
+    f"{annual_generation_kwh:,.0f} kWh"
+)
+
+col2.metric(
+    "Estimated CO2 avoided per year",
+    f"{co2_avoided_tonnes:,.2f} tonnes"
+)
+
+st.metric(
+    "Estimated CO2 avoided over 25 years",
+    f"{lifetime_co2_tonnes:,.2f} tonnes"
+)
+
+st.caption(
+    "Environmental figures are estimates, not measured emissions "
+    "reductions. The 25-year estimate assumes constant annual "
+    "generation and grid emissions factor; actual results may vary."
+)
+
 st.info(
     f"Approximate next-30-day bill savings: ₹{estimated_monthly_bill_savings:,.0f}. "
     "Actual savings depend on your billing rules, self-consumption, exports, "
@@ -349,18 +429,26 @@ else:
 
 st.subheader("Results table")
 
+
 summary = pd.DataFrame([
     {"Metric": "Location", "Estimate": location},
     {"Metric": "Average daily generation", "Estimate": f"{average_daily_generation:.2f} kWh"},
     {"Metric": "Estimated annual generation", "Estimate": f"{annual_generation:.2f} kWh"},
     {"Metric": "Panel count", "Estimate": str(result["panels"])},
-    {"Metric": "Gross installed cost", "Estimate": f"₹{result['gross_cost']:,.0f}"},
+    {"Metric": "Gross installed cost", "Estimate": f"₹{gross_cost:,.0f}"},
+    {"Metric": "Subsidy entered", "Estimate": f"₹{subsidy_amount:,.0f}"},
+    {"Metric": "Final installation cost", "Estimate": f"₹{final_cost:,.0f}"},
     {"Metric": "Current monthly bill", "Estimate": f"₹{monthly_bill:,.0f}"},
     {"Metric": "Estimated annual bill savings", "Estimate": f"₹{annual_savings:,.0f}"},
     {"Metric": "Annual maintenance", "Estimate": f"₹{annual_maintenance:,.0f}"},
-    {"Metric": "Simple payback", "Estimate": f"{payback_years:.1f} years" if payback_years is not None else "Not calculated"},
+    {"Metric": "Simple payback before subsidy", "Estimate": f"{payback_years:.1f} years" if payback_years is not None else "Not calculated"},
+    {"Metric": "Estimated payback after subsidy", "Estimate": f"{subsidized_payback:.1f} years" if subsidized_payback is not None else "Not calculated"},
+    {"Metric": "Grid emission factor", "Estimate": f"{grid_emission_factor:.3f} kg CO2/kWh"},
+    {"Metric": "Estimated CO2 avoided per year", "Estimate": f"{co2_avoided_tonnes:.2f} tonnes"},
+    {"Metric": "Estimated CO2 avoided over 25 years", "Estimate": f"{lifetime_co2_tonnes:.2f} tonnes"},
     {"Metric": "Data source", "Estimate": data_source},
 ])
+
 
 st.dataframe(summary, width="stretch", hide_index=True)
 
