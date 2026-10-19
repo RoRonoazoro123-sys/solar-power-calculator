@@ -329,7 +329,22 @@ current_month_daily_kwh = (
 estimated_monthly_bill_savings = (
     current_month_daily_kwh * 30 * solar_offset / 100 * tariff
 )
+# Compare estimated solar savings with the current electricity bill.
+estimated_monthly_bill_savings = min(
+    monthly_bill,
+    estimated_monthly_bill_savings,
+)
 
+estimated_remaining_bill = max(
+    0.0,
+    monthly_bill - estimated_monthly_bill_savings,
+)
+
+estimated_bill_reduction_percent = (
+    estimated_monthly_bill_savings / monthly_bill * 100
+    if monthly_bill > 0
+    else 0.0
+)
 st.subheader("At-a-glance performance")
 
 c1, c2, c3, c4 = st.columns(4)
@@ -350,7 +365,31 @@ st.caption(
     f"Location: {location} | Coordinates: {latitude:.4f}, {longitude:.4f}"
 )
 st.caption(f"Data source: {data_source}")
+st.divider()
+st.subheader("💡 Monthly Electricity Bill Savings")
 
+bill_col1, bill_col2, bill_col3 = st.columns(3)
+
+bill_col1.metric(
+    "Current Monthly Bill",
+    f"₹{monthly_bill:,.0f}",
+)
+
+bill_col2.metric(
+    "Estimated Monthly Savings",
+    f"₹{estimated_monthly_bill_savings:,.0f}",
+    f"{estimated_bill_reduction_percent:.1f}% reduction",
+)
+
+bill_col3.metric(
+    "Estimated Remaining Bill",
+    f"₹{estimated_remaining_bill:,.0f}",
+)
+
+st.caption(
+    "These are estimates. Actual savings depend on solar generation, "
+    "electricity tariff, billing rules, and how much solar energy you use."
+)
 if data_start and data_end:
     st.caption(
         f"Historical data period: {data_start} to {data_end}. "
