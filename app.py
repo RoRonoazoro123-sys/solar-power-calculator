@@ -85,17 +85,198 @@ p, label, [data-testid="stMarkdownContainer"] {
     font-size: clamp(1rem, 2vw, 1.8rem) !important;
 }
     .dashboard-subtitle { color: #607368; font-size: 1.05rem; margin-top: -0.6rem; margin-bottom: 1.2rem; }
+
+.hero-banner {
+    background: linear-gradient(120deg, #103d2b, #198754);
+    color: #ffffff;
+    padding: clamp(24px, 5vw, 48px);
+    border-radius: 22px;
+    margin: 18px 0 26px 0;
+    box-shadow: 0 10px 28px rgba(16, 61, 43, 0.16);
+}
+
+.hero-banner h1 {
+    color: #ffffff !important;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.15;
+    margin: 12px 0;
+}
+
+.hero-banner p {
+    color: #f0fff5 !important;
+    font-size: clamp(1rem, 2vw, 1.15rem);
+    max-width: 720px;
+    line-height: 1.7;
+}
+
+.hero-tag {
+    color: #d7ffe5;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+
+.hero-note {
+    color: #ffffff;
+    font-size: 0.95rem;
+    margin-top: 22px;
+    line-height: 2;
+}
+
+@media (max-width: 640px) {
+    .hero-banner {
+        padding: 22px 18px;
+        border-radius: 16px;
+        margin-top: 12px;
+    }
+
+    .hero-tag {
+        letter-spacing: 1px;
+        font-size: 0.7rem;
+    }
+
+    [data-testid="stMetric"] {
+        padding: 10px;
+        border-radius: 10px;
+    }
+}
+
+/* Improve navigation button contrast */
+.stApp [data-testid="stButton"] > button {
+    background-color: #176b45 !important;
+    color: #ffffff !important;
+    border: 1px solid #176b45 !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    min-height: 44px;
+}
+
+.stApp [data-testid="stButton"] > button p,
+.stApp [data-testid="stButton"] > button span {
+    color: #ffffff !important;
+}
+
+.stApp [data-testid="stButton"] > button:hover {
+    background-color: #104b31 !important;
+    border-color: #104b31 !important;
+    color: #ffffff !important;
+}
+
+/* Improve download button visibility */
+.stApp [data-testid="stDownloadButton"] > button {
+    background-color: #176b45 !important;
+    color: #ffffff !important;
+    border: 1px solid #176b45 !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+}
+
+.stApp [data-testid="stDownloadButton"] > button p,
+.stApp [data-testid="stDownloadButton"] > button span {
+    color: #ffffff !important;
+}
+
+.stApp [data-testid="stDownloadButton"] > button:hover {
+    background-color: #104b31 !important;
+    color: #ffffff !important;
+}
+
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 st.title("☀️ Solar Energy — Professional Dashboard")
+
+# Homepage hero section
+st.markdown(
+    """
+    <div class="hero-banner">
+        <div class="hero-tag">CLEAN ENERGY • SMART SAVINGS</div>
+        <h1>Power Your Future with Solar Energy</h1>
+        <p>
+            Estimate solar electricity generation, understand your potential
+            savings, and explore a cleaner energy future for your home.
+        </p>
+        <div class="hero-note">
+            ☀️ Solar generation &nbsp; • &nbsp;
+            ₹ Bill savings &nbsp; • &nbsp;
+            🌱 Environmental impact
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.markdown(
     '<div class="dashboard-subtitle">Solar production, financial insights, '
     'system sizing and environmental impact in one place.</div>',
     unsafe_allow_html=True,
 )
+
+# Website features section
+
+# Quick navigation
+st.markdown("### Explore the calculator")
+
+nav1, nav2, nav3 = st.columns(3)
+
+with nav1:
+    if st.button("☀️ Solar Overview", use_container_width=True):
+        st.session_state["show_solar_tip"] = True
+
+with nav2:
+    if st.button("💰 Savings Guide", use_container_width=True):
+        st.session_state["show_savings_tip"] = True
+
+with nav3:
+    if st.button("📊 How It Works", use_container_width=True):
+        st.session_state["show_method_tip"] = True
+
+if st.session_state.get("show_solar_tip", False):
+    st.info(
+        "Choose your location and solar system settings in the sidebar "
+        "to estimate electricity generation."
+    )
+
+if st.session_state.get("show_savings_tip", False):
+    st.info(
+        "Enter your monthly bill and electricity tariff in the sidebar "
+        "to estimate potential savings."
+    )
+
+if st.session_state.get("show_method_tip", False):
+    st.info(
+        "The calculator uses historical solar-radiation data when available. "
+        "Actual output depends on weather, shading, panel orientation and losses."
+    )
+
+st.markdown("## What you can calculate")
+
+feature1, feature2, feature3 = st.columns(3)
+
+with feature1:
+    st.markdown("### ☀️ Solar Generation")
+    st.write(
+        "Estimate daily, monthly and yearly solar electricity "
+        "generation using historical solar-radiation data."
+    )
+
+with feature2:
+    st.markdown("### 💰 Electricity Savings")
+    st.write(
+        "Estimate monthly bill savings, annual savings and "
+        "the remaining electricity bill."
+    )
+
+with feature3:
+    st.markdown("### 📄 Solar Reports")
+    st.write(
+        "Explore your solar estimates and use the available "
+        "report download options."
+    )
+
+st.divider()
 
 # Approximate coordinates for supported locations.
 LOCATIONS = {
