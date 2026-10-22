@@ -20,13 +20,11 @@ from reportlab.platypus import (
 
 from solar_calculations import estimate_solar
 
-
 st.set_page_config(
-    page_title="Solar Power Calculator",
+    page_title="Solar Power Calculator India | Savings & Generation",
     page_icon="☀️",
     layout="wide",
 )
-
 
 # Professional dashboard styling
 st.markdown(
@@ -487,15 +485,30 @@ monthly = pd.DataFrame({
     "Month": months,
     "Estimated generation (kWh)": monthly_values,
 })
-
+# Estimate monthly savings and cap them at the entered monthly bill.
+monthly["Estimated savings (₹)"] = (
+    monthly["Estimated generation (kWh)"]
+    * (solar_offset / 100)
+    * tariff
+).clip(upper=monthly_bill)
 monthly_generation = float(monthly["Estimated generation (kWh)"].sum())
 annual_generation = monthly_generation
 average_daily_generation = annual_generation / 365
 
 # Recalculate annual bill savings using the seasonal generation estimate.
+# Recalculate annual bill savings using the seasonal generation estimate.
 annual_offset_kwh = annual_generation * solar_offset / 100
-annual_savings = annual_offset_kwh * tariff
+generation_based_savings = annual_offset_kwh * tariff
+
+# Cap estimated savings at the entered annual electricity bill.
+annual_electricity_bill = monthly_bill * 12
+annual_savings = min(
+    generation_based_savings,
+    annual_electricity_bill,
+)
+
 net_annual_benefit = annual_savings - annual_maintenance
+
 payback_years = (
     result["gross_cost"] / net_annual_benefit
     if net_annual_benefit > 0
@@ -810,20 +823,28 @@ def create_pdf_report(summary_df, monthly_df, source, selected_location):
     story.append(Spacer(1, 18))
     story.append(Paragraph("Monthly generation estimate", styles["Heading2"]))
 
-    monthly_data = [["Month", "Estimated generation (kWh)"]]
+  
+    monthly_data = [[
+        "Month",
+        "Generation (kWh)",
+        "Savings (Rs.)",
+    ]]
+
     for _, row in monthly_df.iterrows():
         monthly_data.append([
             str(row["Month"]),
             f"{row['Estimated generation (kWh)']:,.1f}",
+            f"{row['Estimated savings (₹)']:,.0f}",
         ])
 
-    monthly_table = Table(monthly_data, colWidths=[150, 220], repeatRows=1)
-    monthly_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#176B45")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("PADDING", (0, 0), (-1, -1), 5),
-    ]))
+    monthly_table = Table(
+        monthly_data,
+        colWidths=[100, 190, 150],
+        repeatRows=1,
+    )
+    story.append(monthly_table)
+    story.append(Spacer(1, 18))
+
     story.append(monthly_table)
     story.append(Spacer(1, 18))
     story.append(Paragraph(
